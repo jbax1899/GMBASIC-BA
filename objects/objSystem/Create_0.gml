@@ -1,4 +1,6 @@
 typed_text = "";
+output_source = "";
+output_rows = [];
 program_text = "";
 running = false;
 viewing = false;
@@ -19,6 +21,8 @@ errors_scroll_speed = 36;
 
 ///graphics api
 graphics_color = c_white;
+graphics_render_color = undefined;
+graphics_program = undefined;
 
 sprites = {};
 sprite_info = {};

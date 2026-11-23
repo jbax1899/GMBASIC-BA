@@ -3,6 +3,18 @@ CURRENT LANGUAGE SPEC AS OF v26.11.22.1
 
 A LIVE DEMO OF GMBASIC CAN BE FOUND ON ITCH.IO, YOU CAN ALSO DOWNLOAD A WINDOWS BUILD OF IT [HERE!](https://lukanspellweaver.itch.io/gmbasic)
 
+## Convert video to BASIC
+
+Install Python 3.8 or later and FFmpeg, then convert a short clip.
+
+```sh
+python video_to_basic.py input.mp4 preview.bas --duration 5
+```
+
+Type `LOAD` in GMBASIC, select `preview.bas`, and press F5. The converter defaults to an 80×60 grid, a threshold of 128, and area resampling. Use `--width`, `--height`, `--threshold`, or `--resample area|bicubic|lanczos` to adjust the image. `--render polygons` smooths diagonal edges and can produce more draw commands than the default rectangle mode.
+
+The converter samples at 60 FPS by default and emits one `VSYNC` per frame. Complex frames can take multiple game updates to finish. The generated program contains no audio.
+
 ## GMBASIC Syntax
 
 ```basic
@@ -276,7 +288,7 @@ The functions here are to help with program timing
 | Function| Description |
 |---|---|
 |`GETTIMER`| Returns the time in microseconds since the BASIC MACHINE has started running|
-|`VSYNC`|Ends the program’s slice for this frame and resumes next frame. Without it, the program runs up to the per-frame step limit and carries on next frame, so its timing isn’t controlled.|
+|`VSYNC`|Ends the program’s slice for this frame and resumes next frame. A slice also yields at its step or time limit and resumes on the next game update.|
 |`CLS`| Publishes the frame built since the previous `CLS` and starts a new one. Anything drawn before the first `CLS` is discarded!|
 
 ## Buffers  
