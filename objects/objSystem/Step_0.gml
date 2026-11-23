@@ -14,7 +14,6 @@ if (program.waiting_for_input)
             program.input_mode = "";
             program.input_text = "";
             keyboard_string = "";
-            program.steps = 0;
         }
 }
 else
@@ -82,7 +81,6 @@ else
             keyboard_lastkey = vk_nokey;
             running = false;
             program.running := false;
-            program.steps = 0;
             position = 1;
        }
        
@@ -104,7 +102,6 @@ else
                 typed_text = "";
                 position = 1;
                 running = true;
-                program.tokens = tokenize(program);
                 program.start();
                 _handled = true;
            }
@@ -114,7 +111,6 @@ else
                    position = 1;
                    running = false;
                    program.running = false;
-                   program.steps = 0;
                    _handled = true;
             }
             if (string_pos("SPRITE ", typed_text) == 1)
@@ -258,7 +254,7 @@ else
                 var _end = real(string_digits(typed_text))
                 for(var _j = 10; _j <= _end; _j += 10)
                 {
-                    program.add_line($"{_j}", false);
+                    program.add_line($"{_j}");
                 }
                 notify($"AUTOMATICALLY ADDED {_end} LINES, DESTRUCTIVELY")    
                 typed_text = "";
@@ -360,20 +356,21 @@ if(room == rmConsole)
    }
 }
 ///keep running!
-if(program.running && program.steps <= 0 && objSystem.running)
+if (program.running && !program.waiting_for_input && running)
 {
     RESERVED = new SPECIAL();
     program.run();
 }
 
-///scroll program
+if (room != rmConsole) exit;
+
+/// Scroll program listing
 var _pane_left = row_length + 20;
 var _pane_top = 10;
-var _pane_width = room_width - _pane_left;
-var _pane_height = 600; 
+var _program_view_height = 610 - _pane_top;
+var _line_h = 24;
 
-
-if (mouse_x >= _pane_left && mouse_x <= room_width && mouse_y >= _pane_top && mouse_y <= _pane_top + _pane_height)
+if (mouse_x >= _pane_left && mouse_x <= room_width && mouse_y >= _pane_top && mouse_y < _pane_top + _program_view_height)
 {
     if (mouse_wheel_up())
     {
@@ -384,19 +381,16 @@ if (mouse_x >= _pane_left && mouse_x <= room_width && mouse_y >= _pane_top && mo
         program_scroll_y += program_scroll_speed;
     }
 }
-///clamp so this doesn't scroll off the dang screen
-var _content_height = 24 * array_length(program.lines);
-var _max_scroll = max(0, _content_height - _pane_height);
-program_scroll_y = clamp(program_scroll_y, 0, _max_scroll);
+var _content_height = _line_h * array_length(program.lines);
+var _program_max_scroll = max(0, _content_height - _program_view_height);
+program_scroll_y = clamp(program_scroll_y, 0, _program_max_scroll);
 
 /// Scroll variables
 _pane_left = row_length + 20;
 _pane_top = 615;
-_pane_width = window_get_width() - _pane_left;
-_pane_height = window_get_height() - _pane_top;
-var _line_h = 24;
+var _visible_height = room_height - _pane_top - _line_h;
 
-if (mouse_x >= _pane_left &&  mouse_x <= _pane_left + _pane_width &&  mouse_y >= _pane_top &&  mouse_y <= _pane_top + _pane_height)
+if (mouse_x >= _pane_left && mouse_x <= room_width && mouse_y >= _pane_top && mouse_y <= room_height)
 {
     if (mouse_wheel_up())
     {
@@ -407,15 +401,13 @@ if (mouse_x >= _pane_left &&  mouse_x <= _pane_left + _pane_width &&  mouse_y >=
         variables_scroll_y += variables_scroll_speed;
     }
 }
-///clamp so this doesn't scroll off the dang screen too
-var _variable_count = array_length(variable_struct_get_names(program.variables));
-var _visible_height = max(0, _pane_height - _line_h);
+var _variable_count = struct_names_count(program.variables);
 _content_height = _variable_count * _line_h;
-_max_scroll = max(0, _content_height - _visible_height);
+var _max_scroll = max(0, _content_height - _visible_height);
 variables_scroll_y = clamp(variables_scroll_y, 0, _max_scroll);
 
-/// //SCROLL ERRORS
-if (mouse_x >= _pane_left && mouse_x <= room_width && mouse_y >= _pane_top && mouse_y <= _pane_top + _pane_height)
+/// Scroll console messages
+if (mouse_x >= 10 && mouse_x < row_length + 15 && mouse_y >= _pane_top && mouse_y < room_height - 36)
 {
     if (mouse_wheel_up())
     {
@@ -426,9 +418,8 @@ if (mouse_x >= _pane_left && mouse_x <= room_width && mouse_y >= _pane_top && mo
         errors_scroll_y += errors_scroll_speed;
     }
 }
-///clamp so this doesn't scroll off the dang screen
-_content_height = 24 * array_length(program.errors);
-_max_scroll = max(0, _content_height - _pane_height);
+_content_height = _line_h * array_length(program.errors);
+_max_scroll = max(0, _content_height - (_visible_height - 36));
 errors_scroll_y = clamp(errors_scroll_y, 0, _max_scroll);
 
 if (program.running || program.waiting_for_input)
@@ -436,16 +427,14 @@ if (program.running || program.waiting_for_input)
     if (program.current_line != last_highlight_line)
     {
         last_highlight_line = program.current_line;
-        
-        _pane_width = room_width - (row_length + 20);
-        var _b = program_line_bounds(program.current_line, _pane_width);
-        
-        if (_b != undefined)
+
+        var _index = program_line_index(program.current_line);
+        if (_index != -1)
         {
-            var _view_h = 600;
-            if (_b.top < program_scroll_y || _b.top + _b.height > program_scroll_y + _view_h)
+            var _top = _index * _line_h;
+            if (_top < program_scroll_y || _top + _line_h > program_scroll_y + _program_view_height)
             {
-                program_scroll_y = max(0, _b.top - _view_h / 2 + _b.height / 2);
+                program_scroll_y = clamp(_top - (_program_view_height - _line_h) / 2, 0, _program_max_scroll);
             }
         }
     }
@@ -454,5 +443,3 @@ else
 {
     last_highlight_line = -1;
 }
-
-

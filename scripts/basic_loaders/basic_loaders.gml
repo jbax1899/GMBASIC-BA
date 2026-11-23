@@ -35,22 +35,14 @@ function upload_basic()
     array_sort(_nums, true);
     
     var _program = new SCRIPT();
-    var _buf = buffer_create(1024, buffer_grow, 1);
     var _count = array_length(_nums);
     
     for (var _i = 0; _i < _count; _i++)
     {
         var _line = _by_num[$ string(_nums[_i])];
         array_push(_program.lines, _line);
-        buffer_write(_buf, buffer_text, _line + "\r\n");
     }
     
-    buffer_write(_buf, buffer_u8, 0);
-    buffer_seek(_buf, buffer_seek_start, 0);
-    _program.text = buffer_read(_buf, buffer_string);
-    buffer_delete(_buf);
-    
-    _program.tokens = tokenize(_program);
     objSystem.program = _program;
     objSystem.program.loaded = true;
 }
@@ -63,7 +55,7 @@ function load_basic(_filename)
     
     while(!file_text_eof(_file))
     {
-        objSystem.program.add_line(file_text_read_string(_file), false);
+        objSystem.program.add_line(file_text_read_string(_file));
         file_text_readln(_file);
     }
     
@@ -166,20 +158,13 @@ function load_project(_compiled = false)
     array_sort(_nums, true);
     
     var _program = new SCRIPT();
-    var _buf = buffer_create(1024, buffer_grow, 1);
     var _count = array_length(_nums);
     
     for (var _i = 0; _i < _count; _i++)
     {
         var _line = _by_num[$ string(_nums[_i])];
         array_push(_program.lines, _line);
-        buffer_write(_buf, buffer_text, _line + "\r\n");
     }
-    
-    buffer_write(_buf, buffer_u8, 0);
-    buffer_seek(_buf, buffer_seek_start, 0);
-    _program.text = buffer_read(_buf, buffer_string);
-    buffer_delete(_buf);
     
     objSystem.program = _program;
     objSystem.program.loaded = true;
@@ -210,11 +195,10 @@ function load_project(_compiled = false)
         
         file_find_close();
     }
-    
+
     if(_compiled)
     {
         objSystem.running = true;
-        objSystem.program.tokens = tokenize(objSystem.program);
         objSystem.program.start();
     }
 }
