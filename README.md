@@ -3,6 +3,18 @@ CURRENT LANGUAGE SPEC AS OF v26.11.22.1
 
 A LIVE DEMO OF GMBASIC CAN BE FOUND ON ITCH.IO, YOU CAN ALSO DOWNLOAD A WINDOWS BUILD OF IT [HERE!](https://lukanspellweaver.itch.io/gmbasic)
 
+## Convert video to BASIC
+
+Install Python 3.8 or later and FFmpeg, then convert a short clip.
+
+```sh
+python video_to_basic.py input.mp4 preview.bas --duration 5
+```
+
+Type `LOAD` in GMBASIC, select `preview.bas`, and press F5. The converter defaults to an 80×60 grid, a threshold of 128, and area resampling. Use `--width`, `--height`, `--threshold`, or `--resample area|bicubic|lanczos` to adjust the image. `--render polygons` smooths diagonal edges and can produce more draw commands than the default rectangle mode.
+
+The converter samples at 60 FPS by default and emits one `VSYNC` per frame. Complex frames can take multiple game updates to finish. The generated program contains no audio.
+
 ## GMBASIC Syntax
 
 ```basic
