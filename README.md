@@ -276,7 +276,7 @@ The functions here are to help with program timing
 | Function| Description |
 |---|---|
 |`GETTIMER`| Returns the time in microseconds since the BASIC MACHINE has started running|
-|`VSYNC`|Ends the program’s slice for this frame and resumes next frame. Without it, the program runs up to the per-frame step limit and carries on next frame, so its timing isn’t controlled.|
+|`VSYNC`|Ends the program’s slice for this frame and resumes next frame. A slice also yields at its step or time limit and resumes on the next game update.|
 |`CLS`| Publishes the frame built since the previous `CLS` and starts a new one. Anything drawn before the first `CLS` is discarded!|
 
 ## Buffers  

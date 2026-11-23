@@ -6,21 +6,15 @@ function TOKEN(_kind, _value) constructor
     value = _value;
 }
 
-function SCRIPT(_text = "") constructor
+function SCRIPT() constructor
 {
-    text = _text;
     lines = [];
-    tokens = [];
-    func_cache = [];
-    if_cache = [];
-    let_cache = [];
+    tokens = undefined;
+    line_token_cache = {};
     output = $"GMBASIC v26.11.22.1";
     variables =  {};
     pc = 0;
     running = false;
-    steps = 0;
-    _out_of_time = false;
-    
     current_line = -1;
     
     errors = [];
@@ -35,18 +29,21 @@ function SCRIPT(_text = "") constructor
     
     //graphics api
     graphics = [];
+    graphics_dirty = true;
     graphics_build = [];
     has_built_frame = false;
     //also graphics but kinda seperate
     sprites = {};
     
-    clear_caches = function()
+    ensure_tokens = function()
     {
-        func_cache = [];
-        if_cache = [];
-        let_cache = [];
+        if (is_undefined(self.tokens))
+        {
+            self.tokens = tokenize(self);
+            self.line_token_cache = {};
+        }
     }
-    
+
     start = function()
     {
         output = "";
@@ -56,16 +53,13 @@ function SCRIPT(_text = "") constructor
         input_var = "";
         input_text = "";
         graphics = [];
+        graphics_dirty = true;
         graphics_build = [];
         has_built_frame = false;
         current_line = -1;
         errors = [];
         running = true;
-        if(array_length(self.tokens) == 0)
-        {
-            tokens = tokenize(self);
-        }
-        self.run();
+        self.ensure_tokens();
     };
     
     to_text = function()
@@ -84,6 +78,7 @@ function SCRIPT(_text = "") constructor
     
     tokens_to_string = function()
     {
+        self.ensure_tokens();
         var _str = [];
         var _len = array_length(self.tokens);
         for(var _i = 0; _i < _len; _i ++)
@@ -93,7 +88,7 @@ function SCRIPT(_text = "") constructor
         return _str;
     }
     
-    add_line = function(_line, _tokenize = true)
+    add_line = function(_line)
     {  
         var _line_num = get_line_number(_line);
         
@@ -121,18 +116,7 @@ function SCRIPT(_text = "") constructor
                 return get_line_number(_current) - get_line_number(_next);
             })
         
-            text = "";
-            for(var _i = 0; _i < array_length(lines); _i++)
-            {
-                if(is_string(lines[_i]))
-                text += lines[_i]+"\r\n";
-            }
-        
-        if(_tokenize)
-        {
-            self.tokens = tokenize(self);
-        }
-        
+        self.tokens = undefined;
     }
     
     remove_line = function(_num)
@@ -145,30 +129,23 @@ function SCRIPT(_text = "") constructor
             }
         }
         
-        text = "";
-        for (var _i = 0; _i < array_length(lines); _i++)
-        {
-            text += lines[_i] + "\r\n";
-        }
-        self.tokens = tokenize(self);
+        self.tokens = undefined;
     }
-    
-    run = function( _steps = 1300)
+
+    run = function(_steps = 1300)
     {
+        if (self.waiting_for_input) return;
+
+        self.ensure_tokens();
         var _i = self.pc;
         var _len = array_length(self.tokens);
         var _running = true;
+        // Leave part of the update for drawing and editor work.
+        var _slice_us = 0.75 * game_get_speed(gamespeed_microseconds);
         var _start = get_timer();
-        self.steps = _steps;
-        _check = 0;
-        _yield = false;
-        
-        if (self.waiting_for_input)
-        {
-            return;
-        }
-        
-        while (_i < _len && _running && self.steps > 0 && !_yield)
+        var _check = 0;
+
+        while (_i < _len && _running && self.running && _steps > 0)
         {
             var _token = self.tokens[_i];
             
@@ -231,6 +208,7 @@ function SCRIPT(_text = "") constructor
                     if(has_built_frame)
                     {
                         graphics = graphics_build;
+                        graphics_dirty = true;
                     }
                     graphics_build = [];
                     has_built_frame = true;
@@ -239,14 +217,13 @@ function SCRIPT(_text = "") constructor
                 }
                 else if (_token.value == "VSYNC")
                 {
-                    _yield = true;
-                    self.steps = 0;
                     _i++;
+                    break;
                 }
                 else if (_token.value == "INPUT")
                 {
                     
-                    var _mode = self.tokens[_i + 1].value;
+                    var _mode = _i + 1 < _len ? self.tokens[_i + 1].value : undefined;
                     if(_mode == "KEY")
                     {
                         if (_i + 2 < _len && self.tokens[_i + 2].kind == "WORD")
@@ -292,10 +269,7 @@ function SCRIPT(_text = "") constructor
                         var _close = find_close_paren(self.tokens, _i + 2);
                         if (_close != -1)
                         {
-                            var _inner = [];
-                            for (var _k = _i + 3; _k < _close; _k++) array_push(_inner, self.tokens[_k]);
-                            array_push(_inner, new TOKEN("NEWLINE", "\n"));
-                            _index_pf = to_postfix(_inner, 0);
+                            _index_pf = to_postfix(self.tokens, _i + 3, _close);
                             _equals = _close + 1;
                         }
                     }
@@ -310,7 +284,7 @@ function SCRIPT(_text = "") constructor
                     }
                     else
                     {
-                        var _postfix = to_postfix(self.tokens, _equals + 1);
+                        var _postfix = to_postfix(self.tokens, _equals + 1, _end);
                         
                         if (array_length(_postfix) == 0)
                         {
@@ -424,15 +398,7 @@ function SCRIPT(_text = "") constructor
                     }
                     else
                     {
-                        var _condition_tokens = [];
-                        for (var _c = _i + 1; _c < _then; _c++)
-                        {
-                            array_push(_condition_tokens, self.tokens[_c]);
-                        }
-                        
-                        array_push(_condition_tokens, new TOKEN("NEWLINE", "\n"));
-                        
-                        var _postfix = to_postfix(_condition_tokens, 0);
+                        var _postfix = to_postfix(self.tokens, _i + 1, _then);
                         
                         if (array_length(_postfix) == 0)
                         {
@@ -511,20 +477,20 @@ function SCRIPT(_text = "") constructor
             {
                 _i++;
             }
-            steps --;
+            _steps--;
             _check++;
             if (_check >= 32) 
             { 
                 _check = 0; 
-                if (get_timer() - _start >= _steps) 
+                if (get_timer() - _start >= _slice_us)
                 {
-                    _out_of_time = true; 
+                    break;
                 }
             }
         }
         
         self.pc = _i;
-        self.running = _running;
+        self.running = self.running && _running && _i < _len;
         
         if(string_length(self.output) > 2000)
         {
@@ -586,7 +552,8 @@ function tokenize(_SCRIPT)
     
     for(var _i = 0; _i < _len; _i++)
     {
-        _result = array_concat(_result, tokenizer(_SCRIPT.lines[_i]));
+        // Copy-on-write is disabled in the project, so append to the same array.
+        tokenizer(_SCRIPT.lines[_i], _result);
         array_push(_result, new TOKEN("NEWLINE", "\n"));
     }
     return _result;
@@ -596,7 +563,6 @@ function tokenizer(_line, _tokens = [])
 {
     var _i = 1;
     var _len = string_length(_line);
-    var _cmd = false;
     
     while (_i <= _len)
     {
@@ -735,7 +701,11 @@ function get_variable(_var_name)
 
 function find_line_token(_number)
 {
-    var _tokens = objSystem.program.tokens;
+    var _program = objSystem.program;
+    var _cached = _program.line_token_cache[$ _number];
+    if (!is_undefined(_cached)) return _cached;
+
+    var _tokens = _program.tokens;
     var _i = 0;
     var _line_start = true;
 
@@ -745,6 +715,7 @@ function find_line_token(_number)
         
         if (_line_start && _token.kind == "NUMBER" && real(_token.value) == real(_number))
         {
+            _program.line_token_cache[$ _number] = _i;
             return _i;
         }
         
@@ -760,6 +731,7 @@ function find_line_token(_number)
         _i++;
     }
     
+    _program.line_token_cache[$ _number] = -1;
     return -1;
 }
 
@@ -808,12 +780,22 @@ function lengthdir_z(_len, _pitch)
 
 ///@param _tokens {ARRAY} an array of math tokens
 ///@param _start {INTEGER} the starting position
-function to_postfix(_tokens, _start)
+///@param _end {INTEGER} the optional exclusive end of the expression
+function to_postfix(_tokens, _start, _end = undefined)
 {
+    var _len = _end ?? array_length(_tokens);
+    if (_len == _start + 1)
+    {
+        var _single = _tokens[_start];
+        if (_single.kind == "NUMBER" || _single.kind == "STRING" || _single.kind == "WORD")
+        {
+            return [_single];
+        }
+    }
+
     var _output = [];
     var _ops = [];
     var _i = _start;
-    var _len = array_length(_tokens);
     var _expect_value = true;
 
     while (_i < _len && _tokens[_i].kind != "NEWLINE")
@@ -823,7 +805,7 @@ function to_postfix(_tokens, _start)
         
         if(_token.kind == "WORD" && _i +1 < _len && _tokens[_i + 1].kind == "SYMBOL" && _tokens[_i + 1].value == "(")
         {
-            var _close = find_close_paren(_tokens, _i + 1);
+            var _close = find_close_paren(_tokens, _i + 1, _len);
             
             if(_close == -1)
             {
@@ -831,11 +813,13 @@ function to_postfix(_tokens, _start)
                 return [];
             }
             
-            if(array_contains(global.function_names, string_upper(_value)))
+            var _name = string_upper(_value);
+            if(array_contains(global.function_names, _name))
             {
-                var _split = split_arguments(_tokens, _i + 2, _close);
+                var _arg_start = _i + 2;
+                var _arg_ends = argument_ends(_tokens, _arg_start, _close);
                 
-                if(!_split.ok)
+                if(is_undefined(_arg_ends))
                 {
                     notify("FUNCTION: EMPTY OR INVALID ARGUMENT");
                     return [];
@@ -843,12 +827,9 @@ function to_postfix(_tokens, _start)
                 
                 var _args_pf = [];
                 
-                for(var _j = 0; _j < array_length(_split.parts); _j++)
+                for(var _j = 0; _j < array_length(_arg_ends); _j++)
                 {
-                    var _arg_tokens = _split.parts[_j];
-                    array_push(_arg_tokens, new TOKEN("NEWLINE", "\n"))
-                    
-                    var _arg_pf = to_postfix(_arg_tokens, 0);
+                    var _arg_pf = to_postfix(_tokens, _arg_start, _arg_ends[_j]);
                     
                     if(array_length(_arg_pf) == 0)
                     {
@@ -857,21 +838,14 @@ function to_postfix(_tokens, _start)
                     }
                     
                     array_push(_args_pf, _arg_pf);
+                    _arg_start = _arg_ends[_j] + 1;
                 }
-                var _name = string_upper(_value);
                 array_push(_output, new TOKEN("FUNCTION", {id: global.function_bridge[$ _name], name: _name, arguments: _args_pf}));
                 _expect_value = false;
             }
             else 
             {
-                var _inner = [];
-                for(var _j = _i + 2; _j < _close; _j++)
-                {
-                    array_push(_inner, _tokens[_j]);
-                }
-                array_push(_inner, new TOKEN("NEWLINE", "\n"));
-                
-                var _index_pf = to_postfix(_inner, 0);
+                var _index_pf = to_postfix(_tokens, _i + 2, _close);
                 if(array_length(_index_pf) == 0)
                 {
                     notify("ARRAY INDEX: EXPECTED AN EXPRESSION");
@@ -975,8 +949,15 @@ function to_postfix(_tokens, _start)
 ///@param _pf {Array} an array of postfix tokens
 function evaluate_postfix(_pf)
 {
-    var _values = [];
     var _len = array_length(_pf);
+    if (_len == 1)
+    {
+        var _single = _pf[0];
+        if (_single.kind == "NUMBER") return real(_single.value);
+        if (_single.kind == "STRING") return _single.value;
+    }
+
+    var _values = [];
     
     for (var _i = 0; _i < _len; _i++)
     {
@@ -1862,19 +1843,12 @@ function evaluate_postfix(_pf)
     return _values[0];
 }
 
-function split_arguments(_tokens, _start, _end)
+function argument_ends(_tokens, _start, _end)
 {
-    if(_start == _end)
-    {
-        return 
-        {
-            ok: true,
-            parts: []
-        }
-    }
-    
     var _parts = [];
-    var _current = [];
+    if (_start == _end) return _parts;
+
+    var _arg_start = _start;
     var _depth = 0;
     
     for(var _i = _start; _i < _end; _i++)
@@ -1884,66 +1858,41 @@ function split_arguments(_tokens, _start, _end)
         if(_token.kind == "SYMBOL" && _token.value == "(")
         {
             _depth ++;
-            array_push(_current, _token);
         }
         else if(_token.kind == "SYMBOL" && _token.value == ")")
         {
             _depth --;
-            if(_depth < 0)
-            {
-                return 
-                {
-                    ok: false,
-                    parts: []
-                }
-            }
-            array_push(_current, _token);
+            if (_depth < 0) return undefined;
         }
         else if(_token.kind == "SYMBOL" && _token.value == "," && _depth == 0)
         {
-            if(array_length(_current) == 0)
-            {
-                return 
-                {
-                    ok: false,
-                    parts: []
-                }
-            }
-            
-            array_push(_parts, _current);
-            _current = [];
-        }
-        else 
-        {
-            array_push(_current, _token);
+            if (_i == _arg_start) return undefined;
+            array_push(_parts, _i);
+            _arg_start = _i + 1;
         }
     }
     
-    if(array_length(_current) == 0)
-    {
-        return 
-        {
-            ok: false,
-            parts: []
-        }
-    }
-    
-    array_push(_parts, _current);
-    return 
-    {
-        ok: true,
-        parts: _parts
-    }
+    if (_arg_start == _end) return undefined;
+    array_push(_parts, _end);
+    return _parts;
 }
 
 
 ///SYSTEM CALLS
+function editor_pane_scissor(_region, _left, _top, _right, _bottom)
+{
+    // Draw GUI uses room coordinates here, but its scissor uses back-buffer pixels.
+    var _sx = (_region[2] - _region[0]) / room_width;
+    var _sy = (_region[3] - _region[1]) / room_height;
+    var _x = round(_region[0] + _left * _sx);
+    var _y = round(_region[1] + _top * _sy);
+    gpu_set_scissor(_x, _y, round(_region[0] + _right * _sx) - _x,
+        round(_region[1] + _bottom * _sy) - _y);
+}
+
 function notify(_text, _halt = false)
 {
     array_push(objSystem.program.errors, $"{_text}");
-    var _content_height = 24 * array_length(objSystem.program.errors);
-    var _max_scroll = max(0, _content_height - (window_get_height() - 615));
-    objSystem.errors_scroll_y = clamp(objSystem.errors_scroll_y, 0, _max_scroll);
     if(_halt)
     {
         objSystem.running = false;
@@ -1951,25 +1900,22 @@ function notify(_text, _halt = false)
     }
 }
 
-/// @returns {struct|undefined} the pixel top and height of a program line in the pane
-function program_line_bounds(_line_num, _width)
+/// @returns {real} the zero-based listing row for a BASIC line number, or -1
+function program_line_index(_line_num)
 {
-    var _count = array_length(objSystem.program.lines);
-    var _prefix = "";
-    
-    for (var _i = 0; _i < _count; _i++)
+    // All listing writers keep BASIC line numbers in order.
+    var _lines = objSystem.program.lines;
+    var _low = 0;
+    var _high = array_length(_lines) - 1;
+    while (_low <= _high)
     {
-        _prefix += (_prefix == "" ? "" : "\r\n") + objSystem.program.lines[_i];
-        
-        if (get_line_number(objSystem.program.lines[_i]) == _line_num)
-        {
-            var _line_h = string_height_ext(objSystem.program.lines[_i], 24, _width);
-            var _end_h  = string_height_ext(_prefix, 24, _width);
-            return { top: _end_h - _line_h, height: _line_h };
-        }
+        var _mid = (_low + _high) div 2;
+        var _number = get_line_number(_lines[_mid]);
+        if (_number == _line_num) return _mid;
+        if (_number < _line_num) _low = _mid + 1;
+        else _high = _mid - 1;
     }
-
-    return undefined;
+    return -1;
 }
 
 
@@ -1995,10 +1941,10 @@ function find_close_bracket(_tokens, _open)
     return -1;
 }
 
-function find_close_paren(_tokens, _open)
+function find_close_paren(_tokens, _open, _end = undefined)
 {
     var _depth = 0;
-    var _len = array_length(_tokens);
+    var _len = _end ?? array_length(_tokens);
     
     for (var _i = _open; _i < _len; _i++)
     {
